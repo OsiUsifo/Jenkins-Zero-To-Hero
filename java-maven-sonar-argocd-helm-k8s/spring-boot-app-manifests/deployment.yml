@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: spring-boot-app
-        image: osiusifo/ultimate-cicd:28
+        image: osiusifo/ultimate-cicd:12
         ports:
         - containerPort: 8080
