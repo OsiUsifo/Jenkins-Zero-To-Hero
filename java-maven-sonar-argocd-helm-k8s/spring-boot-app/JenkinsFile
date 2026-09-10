@@ -71,13 +71,32 @@ stage('Build and Push Docker Image') {
 }
 
 stage('Update Deployment File') {
-  steps {
-    withCredentials([
-      string(
-        credentialsId: 'github',
-        variable: 'GITHUB_TOKEN'
-      )
-    ]) {
+    environment {
+        GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+        GIT_USER_NAME = "OsiUsifo"
+    }
+    steps {
+        withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
+            sh '''
+                cd "$WORKSPACE"
+
+                git config --global --add safe.directory "$WORKSPACE"
+                git config user.email "oserekpamaiusifo@hotmail.com"
+                git config user.name "OsiUsifo"
+
+                sed -i "s|osiusifo/ultimate-cicd:.*|osiusifo/ultimate-cicd:${BUILD_NUMBER}|g" \
+                    java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+                git commit -m "Update deployment image to version ${BUILD_NUMBER}" || true
+
+                git push https://OsiUsifo:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
+            '''
+        }
+    }
+}
+
 
       sh '''
         cd "$WORKSPACE"
