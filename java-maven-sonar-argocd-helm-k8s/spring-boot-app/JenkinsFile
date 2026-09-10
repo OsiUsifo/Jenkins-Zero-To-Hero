@@ -1,143 +1,91 @@
 pipeline {
-    agent {
-        docker {
-            image 'osiusifo/maven-abhishek-docker-agent:v3'
-            args '--user root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
+  agent {
+    docker {
+      image 'osiusifo/maven-abhishek-docker-agent:v3'
+      args '--user root -v /var/run/docker.sock:/var/run/docker.sock --add-host=host.docker.internal:host-gateway'
+    }
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        git branch: 'main', url: 'https://github.com/OsiUsifo/Jenkins-Zero-To-Hero.git'
+      }
     }
 
-    stages {
-
-        stage('Checkout') {
-            steps {
-                git branch: 'main',
-                    url: 'https://github.com/OsiUsifo/Jenkins-Zero-To-Hero.git'
-            }
-        }
-
-        stage('Build and Test') {
-            steps {
-                sh 'ls -ltr'
-
-                sh '''
-                    cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                    mvn clean package
-                '''
-            }
-        }
-
-        stage('Static Code Analysis') {
-            environment {
-                SONAR_URL = "http://3.110.64.223:9000"
-            }
-
-            steps {
-                withCredentials([
-                    string(
-                        credentialsId: 'sonarqube',
-                        variable: 'SONAR_AUTH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-
-                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.11.0.3922:sonar \
-                            -Dsonar.token=$SONAR_AUTH_TOKEN \
-                            -Dsonar.host.url=${SONAR_URL}
-                    '''
-                }
-            }
-        }
-
-        stage('Build and Push Docker Image') {
-            environment {
-                DOCKER_IMAGE = "osiusifo/ultimate-cicd:${BUILD_NUMBER}"
-            }
-
-            steps {
-                script {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        docker build -t ${DOCKER_IMAGE} .
-                    '''
-
-                    def dockerImage = docker.image("${DOCKER_IMAGE}")
-
-                    docker.withRegistry(
-                        'https://index.docker.io/v1/',
-                        'docker-cred'
-                    ) {
-                        dockerImage.push()
-                    }
-                }
-            }
-        }
-
-        stage('Update Deployment File') {
-            environment {
-                GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
-                GIT_USER_NAME = "OsiUsifo"
-            }
-
-            steps {
-                withCredentials([
-                    string(
-                        credentialsId: 'github',
-                        variable: 'GITHUB_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        echo "===== WORKSPACE ====="
-                        echo "WORKSPACE=$WORKSPACE"
-                        pwd
-
-                        echo "===== FILES ====="
-                        ls -la
-
-                        echo "===== GIT STATUS ====="
-                        git status
-
-                        echo "===== GIT REMOTE ====="
-                        git remote -v
-
-                        echo "===== GIT CONFIGURATION ====="
-                        git config user.email "oserekpamaiusifo@hotmail.com"
-                        git config user.name "OsiUsifo"
-
-                        echo "===== UPDATING DEPLOYMENT FILE ====="
-
-                        sed -i "s|osiusifo/ultimate-cicd:.*|osiusifo/ultimate-cicd:${BUILD_NUMBER}|g" \
-                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                        echo "===== DEPLOYMENT FILE ====="
-
-                        grep "image:" \
-                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                        echo "===== GIT DIFF ====="
-                        git diff
-
-                        echo "===== ADDING FILE ====="
-
-                        git add \
-                            java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                        echo "===== COMMITTING ====="
-
-                        git commit \
-                            -m "Update deployment image to version ${BUILD_NUMBER}" || true
-
-                        echo "===== PUSHING TO GITHUB ====="
-
-                        git push \
-                            https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git \
-                            HEAD:main
-
-                        echo "===== DEPLOYMENT FILE UPDATED SUCCESSFULLY ====="
-                    '''
-                }
-            }
-        }
+    stage('Build and Test') {
+      steps {
+        sh 'ls -ltr'
+        sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
+      }
     }
+
+    stage('Static Code Analysis') {
+      environment {
+        SONAR_URL = "http://host.docker.internal:9000"
+      }
+
+      steps {
+        withCredentials([
+          string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')
+        ]) {
+          sh '''
+            cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+
+            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.11.0.3922:sonar \
+              -Dsonar.token=$SONAR_AUTH_TOKEN \
+              -Dsonar.host.url=${SONAR_URL}
+          '''
+        }
+      }
+    }
+
+    stage('Build and Push Docker Image') {
+      environment {
+        DOCKER_IMAGE = "osiusifo/ultimate-cicd:${BUILD_NUMBER}"
+        REGISTRY_CREDENTIALS = credentials('docker-cred')
+      }
+
+      steps {
+        script {
+          sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+
+          def dockerImage = docker.image("${DOCKER_IMAGE}")
+
+          docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+            dockerImage.push()
+          }
+        }
+      }
+    }
+
+    stage('Update Deployment File') {
+      environment {
+        GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+        GIT_USER_NAME = "OsiUsifo"
+      }
+
+      steps {
+        withCredentials([
+          string(credentialsId: 'github', variable: 'GITHUB_TOKEN')
+        ]) {
+          sh '''
+            git config user.email "oserekpamaiusifo@hotmail.com"
+            git config user.name "OsiUsifo"
+
+            sed -i "s|osiusifo/ultimate-cicd:.*|osiusifo/ultimate-cicd:${BUILD_NUMBER}|g" \
+              java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+            git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+            git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+
+            git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+          '''
+        }
+      }
+    }
+  }
 }
 
