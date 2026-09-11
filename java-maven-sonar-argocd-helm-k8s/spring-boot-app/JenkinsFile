@@ -28,7 +28,7 @@ stages {
 
     stage('Static Code Analysis') {
         environment {
-            SONAR_URL = "http://3.110.64.223:9000"
+            SONAR_URL = "http://35.154.170.9:9000"
         }
 
         steps {
